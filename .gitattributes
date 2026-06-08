@@ -1,0 +1,11 @@
+# Mark example and documentation files as linguist-documentation
+# This tells GitHub secret scanning these are safe examples
+
+*.example linguist-documentation
+docs/*.md linguist-documentation
+*.md linguist-documentation=true
+COMPLETE-SETUP-GUIDE.md linguist-documentation
+QUICK-START.md linguist-documentation
+README.md linguist-documentation
+
+# Made with Bob

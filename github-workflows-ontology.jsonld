@@ -1,0 +1,496 @@
+{
+  "@context": {
+    "gwo": "http://example.org/github-workflows#",
+    "schema": "http://schema.org/",
+    "id": "@id",
+    "type": "@type",
+    "name": "schema:name",
+    "description": "schema:description",
+    "attributes": "gwo:attributes",
+    "identityKey": "gwo:identityKey",
+    "humanRef": "gwo:humanRef",
+    "invariant": "gwo:invariant",
+    "hasState": {
+      "@id": "gwo:hasState",
+      "@type": "@id"
+    },
+    "initialState": {
+      "@id": "gwo:initialState",
+      "@type": "@id"
+    },
+    "terminalStates": {
+      "@id": "gwo:terminalStates",
+      "@type": "@id"
+    },
+    "relatesTo": {
+      "@id": "gwo:relatesTo",
+      "@type": "@id"
+    },
+    "emitsEvent": {
+      "@id": "gwo:emitsEvent",
+      "@type": "@id"
+    },
+    "from": {
+      "@id": "gwo:from",
+      "@type": "@id"
+    },
+    "to": {
+      "@id": "gwo:to",
+      "@type": "@id"
+    },
+    "precondition": "gwo:precondition",
+    "postcondition": "gwo:postcondition",
+    "Entity": "gwo:Entity",
+    "Operation": "gwo:Operation",
+    "State": "gwo:State"
+  },
+  "@graph": [
+    {
+      "id": "gwo:Workflow",
+      "type": "Entity",
+      "name": "Workflow",
+      "description": "A GitHub Actions workflow that automates software development tasks",
+      "identityKey": "workflowId: UUID",
+      "humanRef": "workflowName",
+      "attributes": {
+        "workflowId": "string",
+        "workflowName": "string",
+        "fileName": "string",
+        "path": "string",
+        "description": "string|null",
+        "state": "ACTIVE|DISABLED",
+        "triggerType": "MANUAL|PUSH|PULL_REQUEST|SCHEDULE|WEBHOOK"
+      },
+      "invariant": [
+        "workflowName must be unique within repository",
+        "fileName must end with .yml or .yaml",
+        "path must start with .github/workflows/",
+        "At least one trigger type must be defined"
+      ],
+      "hasState": [
+        "gwo:WorkflowActive",
+        "gwo:WorkflowDisabled"
+      ],
+      "initialState": "gwo:WorkflowActive",
+      "terminalStates": [
+        "gwo:WorkflowDisabled"
+      ],
+      "relatesTo": [
+        "gwo:Repository",
+        "gwo:WorkflowRun",
+        "gwo:Job",
+        "gwo:Environment"
+      ],
+      "emitsEvent": [
+        "gwo:WorkflowTriggered",
+        "gwo:WorkflowCompleted",
+        "gwo:WorkflowFailed"
+      ]
+    },
+    {
+      "id": "gwo:WorkflowRun",
+      "type": "Entity",
+      "name": "WorkflowRun",
+      "description": "An execution instance of a GitHub Actions workflow",
+      "identityKey": "runId: UUID",
+      "humanRef": "runNumber",
+      "attributes": {
+        "runId": "string",
+        "runNumber": "number",
+        "status": "QUEUED|IN_PROGRESS|COMPLETED",
+        "conclusion": "SUCCESS|FAILURE|CANCELLED|SKIPPED|TIMED_OUT|null",
+        "createdAt": "datetime",
+        "updatedAt": "datetime",
+        "completedAt": "datetime|null",
+        "triggeredBy": "string",
+        "branch": "string",
+        "commitSha": "string"
+      },
+      "invariant": [
+        "runNumber must be sequential and unique per workflow",
+        "conclusion can only be set when status is COMPLETED",
+        "completedAt must be after createdAt"
+      ],
+      "hasState": [
+        "gwo:RunQueued",
+        "gwo:RunInProgress",
+        "gwo:RunCompleted"
+      ],
+      "initialState": "gwo:RunQueued",
+      "terminalStates": [
+        "gwo:RunCompleted"
+      ],
+      "relatesTo": [
+        "gwo:Workflow",
+        "gwo:Job",
+        "gwo:Deployment",
+        "gwo:Environment"
+      ],
+      "emitsEvent": [
+        "gwo:RunStarted",
+        "gwo:RunCompleted",
+        "gwo:RunFailed",
+        "gwo:RunCancelled"
+      ]
+    },
+    {
+      "id": "gwo:Job",
+      "type": "Entity",
+      "name": "Job",
+      "description": "A set of steps that execute on the same runner in a workflow",
+      "identityKey": "jobId: UUID",
+      "humanRef": "jobName",
+      "attributes": {
+        "jobId": "string",
+        "jobName": "string",
+        "status": "QUEUED|IN_PROGRESS|COMPLETED",
+        "conclusion": "SUCCESS|FAILURE|CANCELLED|SKIPPED|null",
+        "startedAt": "datetime|null",
+        "completedAt": "datetime|null",
+        "runnerType": "UBUNTU|WINDOWS|MACOS|SELF_HOSTED"
+      },
+      "invariant": [
+        "jobName must be unique within a workflow run",
+        "conclusion can only be set when status is COMPLETED"
+      ],
+      "hasState": [
+        "gwo:JobQueued",
+        "gwo:JobInProgress",
+        "gwo:JobCompleted"
+      ],
+      "initialState": "gwo:JobQueued",
+      "terminalStates": [
+        "gwo:JobCompleted"
+      ],
+      "relatesTo": [
+        "gwo:WorkflowRun",
+        "gwo:Step"
+      ],
+      "emitsEvent": [
+        "gwo:JobStarted",
+        "gwo:JobCompleted",
+        "gwo:JobFailed"
+      ]
+    },
+    {
+      "id": "gwo:Step",
+      "type": "Entity",
+      "name": "Step",
+      "description": "An individual task within a job",
+      "identityKey": "stepId: UUID",
+      "humanRef": "stepName",
+      "attributes": {
+        "stepId": "string",
+        "stepName": "string",
+        "stepNumber": "number",
+        "status": "QUEUED|IN_PROGRESS|COMPLETED",
+        "conclusion": "SUCCESS|FAILURE|SKIPPED|null",
+        "command": "string|null",
+        "action": "string|null"
+      },
+      "invariant": [
+        "stepNumber must be sequential within a job",
+        "Either command or action must be specified, not both"
+      ],
+      "hasState": [
+        "gwo:StepQueued",
+        "gwo:StepInProgress",
+        "gwo:StepCompleted"
+      ],
+      "initialState": "gwo:StepQueued",
+      "terminalStates": [
+        "gwo:StepCompleted"
+      ],
+      "relatesTo": [
+        "gwo:Job"
+      ]
+    },
+    {
+      "id": "gwo:Environment",
+      "type": "Entity",
+      "name": "Environment",
+      "description": "A deployment target environment (development, staging, production)",
+      "identityKey": "environmentId: UUID",
+      "humanRef": "environmentName",
+      "attributes": {
+        "environmentId": "string",
+        "environmentName": "string",
+        "environmentType": "DEVELOPMENT|STAGING|PRODUCTION",
+        "url": "string|null",
+        "requiresApproval": "boolean",
+        "protectionRules": "array|null"
+      },
+      "invariant": [
+        "environmentName must be unique within repository",
+        "PRODUCTION environments should require approval",
+        "environmentType must match one of the defined values"
+      ],
+      "relatesTo": [
+        "gwo:Deployment",
+        "gwo:WorkflowRun",
+        "gwo:Repository"
+      ]
+    },
+    {
+      "id": "gwo:Deployment",
+      "type": "Entity",
+      "name": "Deployment",
+      "description": "A deployment of code to a specific environment",
+      "identityKey": "deploymentId: UUID",
+      "humanRef": "deploymentRef",
+      "attributes": {
+        "deploymentId": "string",
+        "deploymentRef": "string",
+        "status": "PENDING|IN_PROGRESS|SUCCESS|FAILURE|CANCELLED",
+        "createdAt": "datetime",
+        "updatedAt": "datetime",
+        "deployedBy": "string",
+        "commitSha": "string",
+        "branch": "string"
+      },
+      "invariant": [
+        "deploymentRef must be unique",
+        "commitSha must be a valid git commit hash",
+        "Deployment to PRODUCTION must be approved"
+      ],
+      "hasState": [
+        "gwo:DeploymentPending",
+        "gwo:DeploymentInProgress",
+        "gwo:DeploymentSuccess",
+        "gwo:DeploymentFailure"
+      ],
+      "initialState": "gwo:DeploymentPending",
+      "terminalStates": [
+        "gwo:DeploymentSuccess",
+        "gwo:DeploymentFailure",
+        "gwo:DeploymentCancelled"
+      ],
+      "relatesTo": [
+        "gwo:Environment",
+        "gwo:WorkflowRun",
+        "gwo:Repository"
+      ],
+      "emitsEvent": [
+        "gwo:DeploymentStarted",
+        "gwo:DeploymentCompleted",
+        "gwo:DeploymentFailed",
+        "gwo:DeploymentRolledBack"
+      ]
+    },
+    {
+      "id": "gwo:Repository",
+      "type": "Entity",
+      "name": "Repository",
+      "description": "A GitHub repository containing workflows",
+      "identityKey": "repositoryId: UUID",
+      "humanRef": "repositoryFullName",
+      "attributes": {
+        "repositoryId": "string",
+        "repositoryName": "string",
+        "repositoryFullName": "string",
+        "owner": "string",
+        "defaultBranch": "string",
+        "visibility": "PUBLIC|PRIVATE|INTERNAL"
+      },
+      "invariant": [
+        "repositoryFullName must be in format 'owner/repo'",
+        "repositoryFullName must be unique",
+        "defaultBranch must exist"
+      ],
+      "relatesTo": [
+        "gwo:Workflow",
+        "gwo:Environment",
+        "gwo:Deployment"
+      ]
+    },
+    {
+      "id": "gwo:TriggerWorkflow",
+      "type": "Operation",
+      "name": "TriggerWorkflow",
+      "description": "Manually triggers a workflow execution",
+      "from": "gwo:Workflow",
+      "to": "gwo:WorkflowRun",
+      "precondition": [
+        "Workflow must be in ACTIVE state",
+        "Workflow must support workflow_dispatch trigger",
+        "User must have workflow trigger permissions",
+        "All required inputs must be provided"
+      ],
+      "postcondition": [
+        "WorkflowRun is created with QUEUED status",
+        "WorkflowTriggered event is emitted",
+        "Run is associated with the triggering user"
+      ]
+    },
+    {
+      "id": "gwo:DeployToEnvironment",
+      "type": "Operation",
+      "name": "DeployToEnvironment",
+      "description": "Deploys code to a specific environment",
+      "from": "gwo:WorkflowRun",
+      "to": "gwo:Environment",
+      "precondition": [
+        "WorkflowRun must be in IN_PROGRESS state",
+        "Environment must exist and be accessible",
+        "If PRODUCTION, approval must be granted",
+        "All tests must pass for PRODUCTION deployments"
+      ],
+      "postcondition": [
+        "Deployment record is created",
+        "Environment is updated with new deployment",
+        "DeploymentStarted event is emitted"
+      ]
+    },
+    {
+      "id": "gwo:ApproveDeployment",
+      "type": "Operation",
+      "name": "ApproveDeployment",
+      "description": "Approves a pending deployment to a protected environment",
+      "from": "gwo:Deployment",
+      "to": "gwo:Environment",
+      "precondition": [
+        "Deployment must be in PENDING state",
+        "Environment must require approval",
+        "User must have approval permissions",
+        "All protection rules must be satisfied"
+      ],
+      "postcondition": [
+        "Deployment status changes to IN_PROGRESS",
+        "Approval is recorded with approver details",
+        "Deployment proceeds to execution"
+      ]
+    },
+    {
+      "id": "gwo:RollbackDeployment",
+      "type": "Operation",
+      "name": "RollbackDeployment",
+      "description": "Rolls back a deployment to previous version",
+      "from": "gwo:Deployment",
+      "to": "gwo:Deployment",
+      "precondition": [
+        "Current deployment must be in SUCCESS or FAILURE state",
+        "Previous deployment must exist",
+        "User must have rollback permissions"
+      ],
+      "postcondition": [
+        "New deployment is created with previous commit",
+        "Environment is restored to previous state",
+        "DeploymentRolledBack event is emitted"
+      ]
+    },
+    {
+      "id": "gwo:CancelWorkflowRun",
+      "type": "Operation",
+      "name": "CancelWorkflowRun",
+      "description": "Cancels an in-progress workflow run",
+      "from": "gwo:WorkflowRun",
+      "to": "gwo:WorkflowRun",
+      "precondition": [
+        "WorkflowRun must be in QUEUED or IN_PROGRESS state",
+        "User must have cancel permissions"
+      ],
+      "postcondition": [
+        "WorkflowRun status changes to COMPLETED",
+        "WorkflowRun conclusion is set to CANCELLED",
+        "All running jobs are terminated",
+        "RunCancelled event is emitted"
+      ]
+    },
+    {
+      "id": "gwo:WorkflowActive",
+      "type": "State",
+      "name": "WorkflowActive",
+      "description": "Workflow is active and can be triggered"
+    },
+    {
+      "id": "gwo:WorkflowDisabled",
+      "type": "State",
+      "name": "WorkflowDisabled",
+      "description": "Workflow is disabled and cannot be triggered"
+    },
+    {
+      "id": "gwo:RunQueued",
+      "type": "State",
+      "name": "RunQueued",
+      "description": "Workflow run is queued and waiting to start"
+    },
+    {
+      "id": "gwo:RunInProgress",
+      "type": "State",
+      "name": "RunInProgress",
+      "description": "Workflow run is currently executing"
+    },
+    {
+      "id": "gwo:RunCompleted",
+      "type": "State",
+      "name": "RunCompleted",
+      "description": "Workflow run has completed (success, failure, or cancelled)"
+    },
+    {
+      "id": "gwo:JobQueued",
+      "type": "State",
+      "name": "JobQueued",
+      "description": "Job is queued and waiting for a runner"
+    },
+    {
+      "id": "gwo:JobInProgress",
+      "type": "State",
+      "name": "JobInProgress",
+      "description": "Job is currently executing on a runner"
+    },
+    {
+      "id": "gwo:JobCompleted",
+      "type": "State",
+      "name": "JobCompleted",
+      "description": "Job has completed execution"
+    },
+    {
+      "id": "gwo:StepQueued",
+      "type": "State",
+      "name": "StepQueued",
+      "description": "Step is queued within the job"
+    },
+    {
+      "id": "gwo:StepInProgress",
+      "type": "State",
+      "name": "StepInProgress",
+      "description": "Step is currently executing"
+    },
+    {
+      "id": "gwo:StepCompleted",
+      "type": "State",
+      "name": "StepCompleted",
+      "description": "Step has completed execution"
+    },
+    {
+      "id": "gwo:DeploymentPending",
+      "type": "State",
+      "name": "DeploymentPending",
+      "description": "Deployment is pending approval or prerequisites"
+    },
+    {
+      "id": "gwo:DeploymentInProgress",
+      "type": "State",
+      "name": "DeploymentInProgress",
+      "description": "Deployment is currently in progress"
+    },
+    {
+      "id": "gwo:DeploymentSuccess",
+      "type": "State",
+      "name": "DeploymentSuccess",
+      "description": "Deployment completed successfully"
+    },
+    {
+      "id": "gwo:DeploymentFailure",
+      "type": "State",
+      "name": "DeploymentFailure",
+      "description": "Deployment failed"
+    },
+    {
+      "id": "gwo:DeploymentCancelled",
+      "type": "State",
+      "name": "DeploymentCancelled",
+      "description": "Deployment was cancelled"
+    }
+  ]
+}
