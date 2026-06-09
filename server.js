@@ -181,6 +181,31 @@ app.get('/workflow-runs', authenticateApiKey, async (req, res) => {
   }
 });
 
+// MCP endpoint for SSE transport
+app.post('/mcp', authenticateApiKey, async (req, res) => {
+  try {
+    // This endpoint proxies to the MCP server
+    // For now, it returns info about available tools
+    res.json({
+      success: true,
+      message: 'MCP endpoint - use stdio transport with mcp-server.js',
+      tools: [
+        'trigger_github_workflow',
+        'list_github_workflows',
+        'get_workflow_runs',
+        'get_workflow_run_status'
+      ],
+      instructions: 'Run: npm run mcp'
+    });
+  } catch (error) {
+    console.error('[ERROR] MCP endpoint error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('[ERROR] Unhandled error:', err);

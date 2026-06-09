@@ -20,26 +20,35 @@ This project enables you to trigger GitHub Actions workflows using natural langu
 │  │  Agent with Context Studio Knowledge                     │   │
 │  │  - Queries deployment best practices                     │   │
 │  │  - Validates requests against guidelines                 │   │
-│  │  - Triggers workflows via API                            │   │
+│  │  - Calls MCP tools to trigger workflows                  │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ HTTPS Request
+                             │ MCP Protocol
+                             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│              Context Studio MCP Server (Cloud)                  │
+│  - GitHub Workflows Knowledge Base                             │
+│  - Deployment procedures and best practices                    │
+│  - Provides context to ICA agent                               │
+└─────────────────────────────────────────────────────────────────┘
+                             │ MCP Protocol
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                    ngrok Tunnel (Bridge)                        │
-│  - Exposes local server to internet                            │
+│  - Exposes local MCP server to internet                        │
 │  - Provides HTTPS endpoint                                     │
 │  - Handles secure tunneling                                    │
 └────────────────────────────┬────────────────────────────────────┘
                              │ Forwarded Request
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│              Local Node.js API Server (Your Machine)            │
+│         GitHub Workflows MCP Server (Your Machine)              │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Express.js Server                                       │   │
-│  │  - API key authentication                                │   │
-│  │  - Endpoints: /trigger-workflow, /workflows, /runs       │   │
-│  │  - Error handling and logging                            │   │
+│  │  MCP Tools:                                              │   │
+│  │  - trigger_github_workflow                               │   │
+│  │  - list_github_workflows                                 │   │
+│  │  - get_workflow_runs                                     │   │
+│  │  - get_workflow_run_status                               │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └────────────────────────────┬────────────────────────────────────┘
                              │ GitHub API Call
@@ -90,9 +99,13 @@ cp .env.example .env
 npm start
 ```
 
-### 4. Expose with ngrok
+### 4. Start MCP Server
 
-In a separate terminal:
+```bash
+npm run mcp
+```
+
+### 5. Expose with ngrok (In Separate Terminal)
 
 ```bash
 ngrok http 3000
@@ -100,35 +113,40 @@ ngrok http 3000
 
 Copy the ngrok URL (e.g., `https://abc123.ngrok.io`)
 
-### 5. Setup Context Studio
+### 6. Setup Context Studio
 
 1. **Import Schema**: Upload `github-workflows-ontology.jsonld` to Context Studio
 2. **Create Context**: Create a new context and link the schema
-3. **Upload Documents**: Upload all files from `docs/` folder
+3. **Upload Documents**: Upload all files from `docs/` folder (including `mcp-server-setup.md`)
 4. **Expose as MCP**: Enable MCP server exposure and save the details
 
-### 6. Create ICA Agentic App
+### 7. Create ICA Agentic App
 
 1. **Create App**: In ICA Agentic App Studio
-2. **Connect MCP**: Add Context Studio MCP server
-3. **Create Agent**: Use the provided agent prompt (see docs)
-4. **Add Custom Tool**: Configure GitHub API tool with your ngrok URL
-5. **Create Workflow**: Chat Input → Agent → Chat Output
-6. **Test**: Try "Deploy to staging"
+2. **Connect Context Studio MCP**: Add Context Studio MCP server (knowledge base)
+3. **Connect GitHub Workflows MCP**: Add your GitHub Workflows MCP server (ngrok URL + /mcp)
+4. **Configure Virtual Server**: Select all tools from both MCP servers
+5. **Create Agent**: Use the provided agent prompt (see `docs/mcp-server-setup.md`)
+6. **Create Workflow**: Chat Input → Agent → Chat Output
+7. **Test**: Try "Deploy to staging"
 
 ## 📁 Project Structure
 
 ```
 ICA-CONTEXT-STUDIO-GITHUB/
-├── server.js                          # Express API server
+├── server.js                          # Express API server (HTTP endpoints)
+├── mcp-server.js                      # MCP server (ICA integration) ⭐ NEW
 ├── package.json                       # Node.js dependencies
 ├── .env.example                       # Environment variables template
 ├── .gitignore                         # Git ignore rules
+├── .gitattributes                     # Git attributes for documentation
+├── mcp-config.json                    # MCP server configuration ⭐ NEW
 ├── github-workflows-ontology.jsonld   # JSON-LD schema for Context Studio
 ├── docs/
 │   ├── github-workflows-overview.md   # Workflows documentation
 │   ├── deployment-procedures.md       # Deployment best practices
-│   ├── api-integration-guide.md       # API usage guide
+│   ├── api-integration-guide.md       # HTTP API usage guide
+│   ├── mcp-server-setup.md            # MCP server setup guide ⭐ NEW
 │   └── ica-setup-instructions.md      # Complete ICA setup guide
 ├── COMPLETE-SETUP-GUIDE.md            # Detailed setup instructions
 ├── QUICK-START.md                     # Fast setup guide

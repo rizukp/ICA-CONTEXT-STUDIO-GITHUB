@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "github-workflows": {
+      "command": "node",
+      "args": ["mcp-server.js"],
+      "env": {
+        "GITHUB_TOKEN": "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",
+        "GITHUB_OWNER": "rizukp",
+        "GITHUB_REPO": "ICA-CONTEXT-STUDIO-GITHUB"
+      }
+    }
+  }
+}
