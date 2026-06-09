@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# MCP configuration with credentials
+mcp-config.json
+
 # Dependencies
 node_modules/
 package-lock.json

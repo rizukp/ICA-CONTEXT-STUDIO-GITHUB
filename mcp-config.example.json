@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "github-workflows": {
+      "command": "node",
+      "args": ["mcp-server.js"],
+      "env": {
+        "GITHUB_TOKEN": "paste_token_here",
+        "GITHUB_OWNER": "your_github_username",
+        "GITHUB_REPO": "your_repository_name"
+      }
+    }
+  }
+}
