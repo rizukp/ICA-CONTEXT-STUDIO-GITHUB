@@ -189,27 +189,340 @@ app.get('/workflow-runs', authenticateApiKey, async (req, res) => {
   }
 });
 
-// MCP endpoint for SSE transport
+// MCP endpoint - Full JSON-RPC 2.0 implementation
 app.post('/mcp', authenticateApiKey, async (req, res) => {
   try {
-    // This endpoint proxies to the MCP server
-    // For now, it returns info about available tools
-    res.json({
-      success: true,
-      message: 'MCP endpoint - use stdio transport with mcp-server.js',
-      tools: [
-        'trigger_github_workflow',
-        'list_github_workflows',
-        'get_workflow_runs',
-        'get_workflow_run_status'
-      ],
-      instructions: 'Run: npm run mcp'
-    });
+    const { jsonrpc, method, params, id } = req.body;
+
+    // Validate JSON-RPC 2.0 request
+    if (jsonrpc !== '2.0') {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32600,
+          message: 'Invalid Request: jsonrpc must be "2.0"'
+        },
+        id: id || null
+      });
+    }
+
+    console.log(`[MCP] Received request: ${method}`);
+
+    // Handle different MCP methods
+    switch (method) {
+      case 'initialize': {
+        // MCP initialization handshake
+        return res.json({
+          jsonrpc: '2.0',
+          result: {
+            protocolVersion: '2024-11-05',
+            capabilities: {
+              tools: {}
+            },
+            serverInfo: {
+              name: 'github-workflows-mcp-server',
+              version: '1.0.0'
+            }
+          },
+          id
+        });
+      }
+
+      case 'tools/list': {
+        // List available tools
+        return res.json({
+          jsonrpc: '2.0',
+          result: {
+            tools: [
+              {
+                name: 'trigger_github_workflow',
+                description: `Triggers a GitHub Actions workflow in ${GITHUB_OWNER}/${GITHUB_REPO}. Use this to deploy, build, or run tests.`,
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    workflow_id: {
+                      type: 'string',
+                      description: 'Workflow file name (e.g., main.yml)',
+                      default: 'main.yml'
+                    },
+                    ref: {
+                      type: 'string',
+                      description: 'Git branch, tag, or commit SHA',
+                      default: 'main'
+                    },
+                    task: {
+                      type: 'string',
+                      description: 'Task to execute: deploy, build, or test',
+                      enum: ['deploy', 'build', 'test']
+                    },
+                    environment: {
+                      type: 'string',
+                      description: 'Target environment',
+                      enum: ['development', 'staging', 'production']
+                    },
+                    message: {
+                      type: 'string',
+                      description: 'Custom message for the workflow run'
+                    }
+                  },
+                  required: ['task', 'environment']
+                }
+              },
+              {
+                name: 'list_github_workflows',
+                description: `Lists all available workflows in ${GITHUB_OWNER}/${GITHUB_REPO}`,
+                inputSchema: {
+                  type: 'object',
+                  properties: {}
+                }
+              },
+              {
+                name: 'get_workflow_runs',
+                description: `Gets recent workflow runs for a specific workflow in ${GITHUB_OWNER}/${GITHUB_REPO}`,
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    workflow_id: {
+                      type: 'string',
+                      description: 'Workflow file name (e.g., main.yml)',
+                      default: 'main.yml'
+                    },
+                    per_page: {
+                      type: 'number',
+                      description: 'Number of results to return (max 100)',
+                      default: 10
+                    }
+                  }
+                }
+              },
+              {
+                name: 'get_workflow_run_status',
+                description: `Gets the status of a specific workflow run in ${GITHUB_OWNER}/${GITHUB_REPO}`,
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    run_id: {
+                      type: 'string',
+                      description: 'Workflow run ID',
+                      required: true
+                    }
+                  },
+                  required: ['run_id']
+                }
+              }
+            ]
+          },
+          id
+        });
+      }
+
+      case 'tools/call': {
+        // Execute a tool
+        const { name, arguments: args } = params;
+
+        switch (name) {
+          case 'trigger_github_workflow': {
+            const {
+              workflow_id = 'main.yml',
+              ref = 'main',
+              task,
+              environment,
+              message = `${task} to ${environment}`
+            } = args;
+
+            console.log(`[MCP] Triggering workflow: ${workflow_id} on ${GITHUB_OWNER}/${GITHUB_REPO}@${ref}`);
+            console.log(`[MCP] Task: ${task}, Environment: ${environment}`);
+
+            await octokit.actions.createWorkflowDispatch({
+              owner: GITHUB_OWNER,
+              repo: GITHUB_REPO,
+              workflow_id: workflow_id,
+              ref: ref,
+              inputs: {
+                task: task,
+                environment: environment,
+                message: message
+              }
+            });
+
+            console.log('[MCP] Workflow triggered successfully');
+
+            return res.json({
+              jsonrpc: '2.0',
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      success: true,
+                      message: 'Workflow triggered successfully',
+                      workflow: workflow_id,
+                      ref: ref,
+                      task: task,
+                      environment: environment,
+                      repository: `${GITHUB_OWNER}/${GITHUB_REPO}`,
+                      github_url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions`,
+                      instructions: 'Check the GitHub Actions tab to monitor the workflow run'
+                    }, null, 2)
+                  }
+                ]
+              },
+              id
+            });
+          }
+
+          case 'list_github_workflows': {
+            console.log('[MCP] Listing workflows');
+
+            const response = await octokit.actions.listRepoWorkflows({
+              owner: GITHUB_OWNER,
+              repo: GITHUB_REPO
+            });
+
+            const workflows = response.data.workflows.map(workflow => ({
+              id: workflow.id,
+              name: workflow.name,
+              path: workflow.path,
+              state: workflow.state,
+              url: workflow.html_url
+            }));
+
+            return res.json({
+              jsonrpc: '2.0',
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      success: true,
+                      repository: `${GITHUB_OWNER}/${GITHUB_REPO}`,
+                      workflows: workflows,
+                      total: workflows.length
+                    }, null, 2)
+                  }
+                ]
+              },
+              id
+            });
+          }
+
+          case 'get_workflow_runs': {
+            const { workflow_id = 'main.yml', per_page = 10 } = args;
+
+            console.log(`[MCP] Getting workflow runs for ${workflow_id}`);
+
+            const response = await octokit.actions.listWorkflowRuns({
+              owner: GITHUB_OWNER,
+              repo: GITHUB_REPO,
+              workflow_id: workflow_id,
+              per_page: parseInt(per_page)
+            });
+
+            const runs = response.data.workflow_runs.map(run => ({
+              id: run.id,
+              name: run.name,
+              status: run.status,
+              conclusion: run.conclusion,
+              created_at: run.created_at,
+              updated_at: run.updated_at,
+              html_url: run.html_url,
+              actor: run.actor?.login
+            }));
+
+            return res.json({
+              jsonrpc: '2.0',
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      success: true,
+                      workflow: workflow_id,
+                      runs: runs,
+                      total: runs.length
+                    }, null, 2)
+                  }
+                ]
+              },
+              id
+            });
+          }
+
+          case 'get_workflow_run_status': {
+            const { run_id } = args;
+
+            console.log(`[MCP] Getting status for run ${run_id}`);
+
+            const response = await octokit.actions.getWorkflowRun({
+              owner: GITHUB_OWNER,
+              repo: GITHUB_REPO,
+              run_id: parseInt(run_id)
+            });
+
+            const run = response.data;
+
+            return res.json({
+              jsonrpc: '2.0',
+              result: {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      success: true,
+                      run: {
+                        id: run.id,
+                        name: run.name,
+                        status: run.status,
+                        conclusion: run.conclusion,
+                        created_at: run.created_at,
+                        updated_at: run.updated_at,
+                        html_url: run.html_url,
+                        actor: run.actor?.login,
+                        event: run.event,
+                        head_branch: run.head_branch,
+                        head_sha: run.head_sha
+                      }
+                    }, null, 2)
+                  }
+                ]
+              },
+              id
+            });
+          }
+
+          default:
+            return res.status(404).json({
+              jsonrpc: '2.0',
+              error: {
+                code: -32601,
+                message: `Method not found: ${name}`
+              },
+              id
+            });
+        }
+      }
+
+      default:
+        return res.status(404).json({
+          jsonrpc: '2.0',
+          error: {
+            code: -32601,
+            message: `Method not found: ${method}`
+          },
+          id
+        });
+    }
   } catch (error) {
-    console.error('[ERROR] MCP endpoint error:', error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
+    console.error('[MCP] Error:', error.message);
+    
+    return res.status(500).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32603,
+        message: 'Internal error',
+        data: error.message
+      },
+      id: req.body.id || null
     });
   }
 });
