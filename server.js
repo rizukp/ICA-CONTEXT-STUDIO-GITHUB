@@ -12,6 +12,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Middleware to bypass ngrok browser warning
+app.use((req, res, next) => {
+  // Headers to bypass ngrok warning page
+  res.setHeader('ngrok-skip-browser-warning', 'true');
+  res.setHeader('User-Agent', 'ICA-Context-Forge');
+  next();
+});
+
 // API Key authentication middleware
 const authenticateApiKey = (req, res, next) => {
   const apiKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
