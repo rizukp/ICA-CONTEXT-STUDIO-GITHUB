@@ -8,27 +8,156 @@ This guide explains how to integrate with GitHub Actions workflows through the A
 
 ```
 ICA Agentic App
+    ↓ (Natural Language)
+ICA Agent (LangGraph)
+    ↓ (MCP Tool Call)
+github-trigger Tool (Context Forge)
     ↓ (HTTPS Request)
-Local Node.js Server (via ngrok)
+Railway Node.js Server
     ↓ (GitHub API Call)
 GitHub Actions
     ↓ (Workflow Execution)
 Deployment/Build/Test
 ```
 
-## API Endpoints
+### Alternative Architecture (Direct API)
+
+```
+External Client
+    ↓ (HTTPS Request)
+Railway Node.js Server
+    ↓ (GitHub API Call)
+GitHub Actions
+    ↓ (Workflow Execution)
+Deployment/Build/Test
+```
+
+## GitHub Trigger MCP Tool
+
+### Overview
+The `github-trigger` tool is configured in ICA Context Forge to trigger GitHub Actions workflows through the Railway API.
+
+### Tool Configuration
+
+**Tool ID**: `github-trigger`
+
+**Type**: REST API Integration
+
+**Endpoint**: `https://ica-context-studio-github-production.up.railway.app/trigger-workflow`
+
+**Method**: POST
+
+**Authentication**: Bearer Token + x-api-key header
+
+**Headers**:
+```json
+{
+  "Content-Type": "application/json",
+  "x-api-key": "YOUR_API_KEY"
+}
+```
+
+### Input Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "enum": ["deploy", "build", "test"],
+      "description": "The task to perform (deploy, build, or test)"
+    },
+    "environment": {
+      "type": "string",
+      "enum": ["development", "staging", "production"],
+      "description": "The target environment"
+    },
+    "message": {
+      "type": "string",
+      "description": "Optional message for the workflow run"
+    }
+  },
+  "required": ["task", "environment"]
+}
+```
+
+### Output Schema
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "description": "Whether the workflow was triggered successfully"
+    },
+    "message": {
+      "type": "string",
+      "description": "Success or error message"
+    },
+    "workflow": {
+      "type": "string",
+      "description": "The workflow file name"
+    },
+    "run_url": {
+      "type": "string",
+      "description": "URL to monitor the workflow run"
+    },
+    "github_url": {
+      "type": "string",
+      "description": "GitHub Actions page URL"
+    }
+  }
+}
+```
+
+### Usage in ICA Agent
+
+The ICA agent uses this tool to trigger workflows after:
+1. Querying Context Studio for workflow documentation
+2. Explaining the action to the user
+3. Receiving confirmation (especially for production)
+
+**Example Agent Flow**:
+```
+User: "Deploy to production"
+  ↓
+Agent queries Context Studio (ctx_58f67b2a31da)
+  ↓
+Agent explains deployment details
+  ↓
+Agent asks for "CONFIRM"
+  ↓
+User types "CONFIRM"
+  ↓
+Agent calls github-trigger tool
+  ↓
+Tool calls Railway API
+  ↓
+Railway triggers GitHub Actions
+  ↓
+Agent reports success with monitoring URL
+```
+
+---
+
+## Railway API Endpoints
+
+### Base URL
+`https://ica-context-studio-github-production.up.railway.app`
 
 ### 1. Health Check
 
 **Endpoint**: `GET /health`
 
-**Purpose**: Verify API server is running and configured correctly
+**Purpose**: Verify Railway API server is running and configured correctly
 
 **Authentication**: None required
 
 **Request**:
 ```bash
-curl http://localhost:3000/health
+curl https://ica-context-studio-github-production.up.railway.app/health
 ```
 
 **Response**:
@@ -37,14 +166,14 @@ curl http://localhost:3000/health
   "status": "ok",
   "timestamp": "2026-06-08T10:00:00.000Z",
   "service": "ICA Context Studio GitHub Integration",
-  "repository": "username/repo-name",
+  "repository": "rizukp/ICA-CONTEXT-STUDIO-GITHUB",
   "github_token_configured": true,
   "api_key_configured": true
 }
 ```
 
 **Use Cases**:
-- Verify server is running
+- Verify Railway server is running
 - Check configuration status
 - Monitor service health
 - Troubleshoot connectivity issues
@@ -68,20 +197,18 @@ x-api-key: your-api-key-here
 **Request Body**:
 ```json
 {
-  "workflow_id": "main.yml",
-  "ref": "main",
-  "inputs": {
-    "task": "deploy",
-    "environment": "production",
-    "message": "Deploying version 1.2.3"
-  }
+  "task": "deploy",
+  "environment": "production",
+  "message": "Deploying version 1.2.3"
 }
 ```
 
 **Parameters**:
-- `workflow_id` (optional): Workflow file name (default: "main.yml")
-- `ref` (optional): Git branch/tag/commit (default: "main")
-- `inputs` (optional): Workflow input parameters (default: {})
+- `task` (required): The operation to perform
+  - Options: `deploy`, `build`, `test`
+- `environment` (required): The target environment
+  - Options: `development`, `staging`, `production`
+- `message` (optional): Custom message for the workflow run
 
 **Response (Success)**:
 ```json
@@ -91,8 +218,8 @@ x-api-key: your-api-key-here
   "status": 204,
   "workflow": "main.yml",
   "ref": "main",
-  "repository": "username/repo-name",
-  "github_url": "https://github.com/username/repo-name/actions",
+  "repository": "rizukp/ICA-CONTEXT-STUDIO-GITHUB",
+  "github_url": "https://github.com/rizukp/ICA-CONTEXT-STUDIO-GITHUB/actions",
   "timestamp": "2026-06-08T10:00:00.000Z"
 }
 ```
@@ -101,8 +228,8 @@ x-api-key: your-api-key-here
 ```json
 {
   "success": false,
-  "error": "Workflow not found",
-  "details": "No workflow found with ID: invalid.yml"
+  "error": "Invalid task parameter",
+  "details": "Task must be one of: deploy, build, test"
 }
 ```
 
@@ -110,50 +237,54 @@ x-api-key: your-api-key-here
 
 Deploy to Production:
 ```bash
-curl -X POST http://localhost:3000/trigger-workflow \
+curl -X POST https://ica-context-studio-github-production.up.railway.app/trigger-workflow \
   -H "Content-Type: application/json" \
   -H "x-api-key: your-api-key" \
   -d '{
-    "workflow_id": "main.yml",
-    "ref": "main",
-    "inputs": {
-      "task": "deploy",
-      "environment": "production",
-      "message": "Production deployment v1.2.3"
-    }
+    "task": "deploy",
+    "environment": "production",
+    "message": "Production deployment v1.2.3"
   }'
 ```
 
 Run Tests:
 ```bash
-curl -X POST http://localhost:3000/trigger-workflow \
+curl -X POST https://ica-context-studio-github-production.up.railway.app/trigger-workflow \
   -H "Content-Type: application/json" \
   -H "x-api-key: your-api-key" \
   -d '{
-    "workflow_id": "main.yml",
-    "ref": "main",
-    "inputs": {
-      "task": "test",
-      "environment": "development",
-      "message": "Running test suite"
-    }
+    "task": "test",
+    "environment": "development",
+    "message": "Running test suite"
   }'
 ```
 
 Build Application:
 ```bash
-curl -X POST http://localhost:3000/trigger-workflow \
+curl -X POST https://ica-context-studio-github-production.up.railway.app/trigger-workflow \
   -H "Content-Type: application/json" \
   -H "x-api-key: your-api-key" \
   -d '{
-    "workflow_id": "main.yml",
-    "ref": "main",
-    "inputs": {
-      "task": "build",
-      "environment": "staging",
-      "message": "Building release candidate"
-    }
+    "task": "build",
+    "environment": "staging",
+    "message": "Building release candidate"
   }'
+```
+
+**PowerShell Example**:
+```powershell
+$headers = @{
+    "Content-Type" = "application/json"
+    "x-api-key" = "your-api-key"
+}
+
+$body = @{
+    task = "deploy"
+    environment = "production"
+    message = "Production deployment"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://ica-context-studio-github-production.up.railway.app/trigger-workflow" -Method POST -Headers $headers -Body $body
 ```
 
 ---
@@ -173,7 +304,7 @@ x-api-key: your-api-key-here
 
 **Request**:
 ```bash
-curl http://localhost:3000/workflows \
+curl https://ica-context-studio-github-production.up.railway.app/workflows \
   -H "x-api-key: your-api-key"
 ```
 
@@ -181,24 +312,17 @@ curl http://localhost:3000/workflows \
 ```json
 {
   "success": true,
-  "repository": "username/repo-name",
+  "repository": "rizukp/ICA-CONTEXT-STUDIO-GITHUB",
   "workflows": [
     {
       "id": 12345678,
       "name": "ICA Triggered Workflow",
       "path": ".github/workflows/main.yml",
       "state": "active",
-      "url": "https://github.com/username/repo-name/actions/workflows/main.yml"
-    },
-    {
-      "id": 87654321,
-      "name": "CI Pipeline",
-      "path": ".github/workflows/ci.yml",
-      "state": "active",
-      "url": "https://github.com/username/repo-name/actions/workflows/ci.yml"
+      "url": "https://github.com/rizukp/ICA-CONTEXT-STUDIO-GITHUB/actions/workflows/main.yml"
     }
   ],
-  "total": 2
+  "total": 1
 }
 ```
 
@@ -229,7 +353,7 @@ x-api-key: your-api-key-here
 
 **Request**:
 ```bash
-curl "http://localhost:3000/workflow-runs?workflow_id=main.yml&per_page=5" \
+curl "https://ica-context-studio-github-production.up.railway.app/workflow-runs?workflow_id=main.yml&per_page=5" \
   -H "x-api-key: your-api-key"
 ```
 
@@ -246,8 +370,8 @@ curl "http://localhost:3000/workflow-runs?workflow_id=main.yml&per_page=5" \
       "conclusion": "success",
       "created_at": "2026-06-08T09:00:00Z",
       "updated_at": "2026-06-08T09:05:00Z",
-      "html_url": "https://github.com/username/repo-name/actions/runs/9876543210",
-      "actor": "username"
+      "html_url": "https://github.com/rizukp/ICA-CONTEXT-STUDIO-GITHUB/actions/runs/9876543210",
+      "actor": "rizukp"
     },
     {
       "id": 9876543209,
@@ -256,8 +380,8 @@ curl "http://localhost:3000/workflow-runs?workflow_id=main.yml&per_page=5" \
       "conclusion": "failure",
       "created_at": "2026-06-08T08:00:00Z",
       "updated_at": "2026-06-08T08:03:00Z",
-      "html_url": "https://github.com/username/repo-name/actions/runs/9876543209",
-      "actor": "username"
+      "html_url": "https://github.com/rizukp/ICA-CONTEXT-STUDIO-GITHUB/actions/runs/9876543209",
+      "actor": "rizukp"
     }
   ],
   "total": 5
@@ -366,53 +490,89 @@ a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6a7b8c9d0e1f2
 
 ## ICA Integration
 
-### Configuring ICA Agentic App
+### Context Studio Setup
 
-1. **Create Custom Tool in ICA**:
-   - Tool Name: `trigger_github_workflow`
-   - Type: HTTP Request
-   - Method: POST
-   - URL: `https://your-ngrok-url.ngrok.io/trigger-workflow`
+**Context ID**: `ctx_58f67b2a31da`
 
-2. **Configure Headers**:
-   ```json
-   {
-     "Content-Type": "application/json",
-     "x-api-key": "${API_KEY}"
-   }
-   ```
+**Purpose**: Stores workflow documentation, deployment procedures, and best practices
 
-3. **Configure Body Template**:
-   ```json
-   {
-     "workflow_id": "main.yml",
-     "ref": "main",
-     "inputs": {
-       "task": "${task}",
-       "environment": "${environment}",
-       "message": "${message}"
-     }
-   }
-   ```
+**Documents Loaded**:
+- Workflow Triggering Guide
+- Deployment Procedures
+- API Integration Guide
+- Agent Usage Examples
+- GitHub Workflows Overview
 
-### Agent Prompt Example
+### github-trigger Tool Configuration
+
+The `github-trigger` tool is configured in ICA Context Forge:
+
+**Tool Settings**:
+- **Name**: github-trigger
+- **Display Name**: github-trigger
+- **URL**: https://ica-context-studio-github-production.up.railway.app/trigger-workflow
+- **Integration Type**: REST
+- **Request Type**: POST
+- **Authentication**: Bearer Token + Custom Headers
+
+**Headers**:
+```json
+{
+  "Content-Type": "application/json",
+  "x-api-key": "YOUR_API_KEY"
+}
+```
+
+**Input Schema**: See "GitHub Trigger MCP Tool" section above
+
+**Output Schema**: See "GitHub Trigger MCP Tool" section above
+
+### Agent Configuration
+
+**Platform**: ICA
+
+**Framework**: LangGraph
+
+**Pattern**: ReAct (Reason-Act-Observe)
+
+**Model**: GPT-5.2
+
+**Tools**:
+- `context-hybrid-query`: Query Context Studio for documentation
+- `github-trigger`: Trigger GitHub Actions workflows
+
+### Agent Prompt Template
 
 ```
-You are a GitHub workflow automation agent. You can trigger workflows, check their status, and provide deployment guidance.
+Create a GitHub workflow assistant for rizukp/ICA-CONTEXT-STUDIO-GITHUB that:
 
-Available tools:
-- trigger_github_workflow: Trigger a GitHub Actions workflow
-- list_workflows: Get available workflows
-- get_workflow_runs: Check workflow execution history
+1. Queries Context Studio (ctx_58f67b2a31da) for workflow documentation
+2. Uses github-trigger tool to trigger workflows
+3. Supports deploy/build/test tasks in dev/staging/prod environments
+4. Requires "CONFIRM" for production deployments
+5. Provides clear explanations and monitoring URLs
 
-When a user requests a deployment:
-1. Query Context Studio for deployment best practices
-2. Verify the environment is appropriate
-3. Confirm with the user
-4. Trigger the workflow
-5. Provide the GitHub Actions URL for monitoring
+The agent should:
+- Always query Context Studio first for workflow information
+- Explain actions clearly before executing
+- For production: require explicit "CONFIRM" (case-sensitive)
+- For non-production: ask for simple yes/no confirmation
+- Provide GitHub Actions monitoring URLs
+- Handle errors gracefully with helpful suggestions
 
-Always follow deployment best practices from Context Studio.
+Repository: rizukp/ICA-CONTEXT-STUDIO-GITHUB
+Workflow: main.yml (ICA Triggered Workflow)
+Branch: main
+
+Available tasks:
+- deploy: Deploy to environment
+- build: Build the application
+- test: Run test suite
+
+Available environments:
+- development: Safe for testing
+- staging: Pre-production
+- production: Live system (requires CONFIRM)
 ```
 
 ### Natural Language Commands
